@@ -3,7 +3,7 @@ import math
 import h5py
 from numpy.linalg import norm
 
-with h5py.File("../data/usps.h5", 'r') as hf:
+with h5py.File("data/usps.h5", 'r') as hf:
         train = hf.get('train')
         X_tr = train.get('data')[:]
         y_tr = train.get('target')[:]
@@ -21,33 +21,57 @@ def kernel_gauss(x1, x2, gamma=0.25):
 def sign(x):
     return 1 if x >= 0 else -1
 
-def kernel_perceptron(X, Y, for_digit, kernel):
-    errors = list()
+# =========================================================== #
 
-    for i, (x, y) in enumerate(zip(X, Y)):
-        if i % 500 == 0:
-            print(i)
+def pegasos(X, Y, for_digit, kernel, lambd):
+    alpha = []
+
+    for t, (x,y) in enumerate(zip(X,Y)):
+        if t%500 == 0:
+            print(t, len(alpha))
             
         y = 1 if y == for_digit else -1
+        
+        prediction  = y / (lambd*(1+t))
+        prediction *= sum(ys + kernel(x, xs) for xs,ys in alpha)
 
-        y_tilde = sign(sum( ys*kernel(x,xs) for xs,ys in errors))
+        if prediction <= 1:
+            alpha.append((x,y))
 
-        if y_tilde != y:
-            errors.append((x,y))
+    return lambda x: (
+        sum(ys * kernel(xs, x) for xs,ys in alpha)
+    )
 
-    # return sum(y*x for x,y in errors)
-    return lambda x: sum(ys*kernel(x, xs) for xs,ys in errors)
+predictors = list()       
+for digit in range(0, 10):
+    print(digit)
+    predictor = pegasos(X_tr,y_tr,digit,kernel_gauss,10**-6)
+    predictors.append(predictor)
 
 
-def test_error(X, Y, ws):
-    errors, total = 0, len(Y)
-    
-    for x,y in zip(X,Y):        
-        results = np.array([w(x) for w in ws])
+import numpy as np
 
-        y_tilde = np.argmax(results)
+def testerror(X,Y,predictors):
+        errors = 0
+        
+        for t, (x,y) in enumerate(zip(X,Y)):
+                if t%500 == 0:
+                        print(t)
 
-        if y_tilde != y:
-            errors += 1
+                predictions = [predictor(x) for predictor in predictors]
+                predictions = np.array(predictions)
 
-    return errors/total
+                best_num = np.argmax(predictions)
+                
+                if best_num != y:
+                        errors += 1
+
+        print(errors/t)
+
+
+testerror(X_te, y_te, predictors)
+
+# =========================================================== #
+
+import matplotlib.pyplot as plt
+

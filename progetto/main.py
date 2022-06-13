@@ -4,6 +4,7 @@ import h5py
 
 import numpy as np
 from numpy.linalg import norm
+import random
 
 with h5py.File("data/usps.h5", 'r') as hf:
     train = hf.get('train')
@@ -12,7 +13,9 @@ with h5py.File("data/usps.h5", 'r') as hf:
     test = hf.get('test')
     X_te = test.get('data')[:]
     y_te = test.get('target')[:]
-    
+
+    all_X, all_Y = kfold.__merge_h5_train_test_sets(X_tr, y_tr, X_te, y_te)
+
     
 def kernel_poly(x1, x2, exp=2):
     return (1 + x1.T.dot(x2)) ** exp
@@ -23,74 +26,160 @@ def kernel_gauss(x1, x2, gamma=0.25):
 def sign(x):
     return 1 if x >= 0 else -1
 
+
 # =========================================================== #
+# =========================================================== #
+# Preprocessing
 
-def pegasos(X, Y, for_digit, kernel, lambd) -> Callable:
-    alpha = []
+# Data already normalized
+assert max(np.max(X_tr), np.max(X_te)) == 1
+assert min(np.min(X_tr), np.min(X_te)) == 0
 
-    for t, (x,y) in enumerate(zip(X,Y)):
-        if t%500 == 0:
+# Meaningless values in labels? (just a sanity check)
+for i, y in enumerate(y_tr):
+    assert y in [0,1,2,3,4,5,6,7,8,9]
+
+for i, y in enumerate(y_te):
+    assert y in [0,1,2,3,4,5,6,7,8,9]
+
+
+# =========================================================== #
+# =========================================================== #
+# Training algorithms
+
+def pegasos(X, Y, for_digit, kernel, lambd, T) -> Callable:
+    """
+    Train a predictor for a given digit.
+    """
+    alpha, t = [], 1
+
+    while (t < T):
+        idx = random.randint(0, len(X)-1)
+        x, y = X[idx], Y[idx]
+        
+        if t%1000 == 0:
             print(t, len(alpha))
             
         y = 1 if y == for_digit else -1
         
-        prediction  = y / (lambd*(1+t))
+        prediction  = y / (lambd*t)
         prediction *= sum(ys + kernel(x, xs) for xs,ys in alpha)
 
         if prediction <= 1:
             alpha.append((x,y))
 
+        t += 1
+
+    print(t, len(alpha))
+    
     return lambda x: (
         sum(ys * kernel(xs, x) for xs,ys in alpha)
     )
 
 
-def pegasos_predictors(X, Y, lambd) -> List[Callable]:    
+def pegasos_predictors(X, Y, lambd, T) -> List[Callable]:
+    """
+    Train predictors for all 10 digits.
+    """
     predictors = list()
     
     for digit in range(0, 10):
         print(f"Building predictor for digit {digit}")
         
-        predictor = pegasos(X_tr,y_tr,digit,kernel_gauss,lambd)
+        predictor = pegasos(X_tr,y_tr,digit,kernel_gauss,lambd,T)
         predictors.append(predictor)
 
     return predictors
 
-# =========================================================== #
 
-def testerror(X,Y,predictors):
+# =========================================================== #
+# =========================================================== #
+# Test error calculation
+
+def test_error(X, Y, predictors: List[Callable]) -> float:
     errors = 0
 
+    print("Testing...")
+    
     for t, (x,y) in enumerate(zip(X,Y)):
-        if t%500 == 0:
+        if t!=0 and t%500 == 0:
             print(t)
 
-    predictions = [predictor(x) for predictor in predictors]
-    predictions = np.array(predictions)
-    
-    best_num = np.argmax(predictions)
+        predictions = [predictor(x) for predictor in predictors]
+        predictions = np.array(predictions)
 
-    if best_num != y:
-        errors += 1
+        best_num = np.argmax(predictions)
 
-    print(errors/t)
+        if best_num != y:
+            errors += 1
+
+    print(f"Test error: {errors/t}")
     return errors/t
 
-
-# testerror(X_te, y_te, predictors)
-
 # =========================================================== #
+# =========================================================== #
+
 import progetto.kfold as kfold
 
-all_X, all_Y = kfold.__merge_h5_train_test_sets(X_tr, y_tr, X_te, y_te)
 
-def single_train_and_test(X, Y, lambd):
-    test_errors = list()
+def single_train_and_test(X, Y, lambd, T) -> Tuple[float, int, float]:
+    """
+    Performs an estimation of test error using 5-fold cross-validation.
+    """
+    print(f"Running on: lambda={lambd} and T={T}")
+    
+    test_errors   = list()
+    running_times = list()
     
     for (xtr, ytr), (xte, yte) in kfold.generate_folds(all_X, all_Y, 5):
-        predictors = pegasos_predictors(xtr, ytr, lambd)
-        
-        test_errors.append(testerror(xte, yte, predictors))
+        start = time.time()
 
-    return sum(test_errors) / len(test_errors)
+        # Build predictors for all digits
+        predictors = pegasos_predictors(xtr, ytr, lambd, T)
+        print(f"Predictors generation took: {int(time.time() - start)} seconds")
         
+        test_errors.append(
+            test_error(xte, yte, predictors)
+        )
+        
+        running_times.append(int(time.time() - start))
+        
+        print(f"Single round test-error for lambda={lambd}, T={T}: " +
+              f"{test_errors[-1]} in {running_times[-1]} seconds")
+
+        
+    print("Completed 5-fold train and test")
+    print(f"Average duration of single round: {int(sum(times)/len(times))}")
+    print(f"Total time: {sum(times)}")
+    
+    return (lambd, T, sum(test_errors) / len(test_errors))
+
+# =========================================================== #
+
+# single_train_and_test(all_X, all_Y, 0.01, 2500)
+
+# =========================================================== #
+import time
+
+__trainset_size = 4 * (len(all_X) // 5)
+Ts = [int(x * __trainset_size) for x in [0.1, 0.5, 1, 2]]
+
+results = list()
+last_time = time.time()
+
+for T in Ts:
+    for lambd in [10**-10, 0.1, 1, 10]:
+        lambd_time = time.time()
+        
+        results.append(
+            single_train_and_test(all_X, all_Y, lambd, T)
+        )
+
+        with open("results.csv", "a") as f:
+            f.write(f"{lambd}, {T}, {results[-1][-1]}\n")
+
+        print(f"Total lambda time: {time.time() - lambd_time}\n\n")
+
+    print(f"Total time: {time.time() - last_time}")
+# =========================================================== #
+

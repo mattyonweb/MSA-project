@@ -1,0 +1,44 @@
+#+TITLE: SVM for digit recognition 
+#+AUTHOR: Matteo Cavada
+#+EMAIL: matteo.cavada@studenti.unimi.it
+
+#+LATEX_CLASS: article
+#+LATEX_CLASS_OPTIONS: [a4paper]
+#+LATEX_HEADER: \input{$HOME/.emacs.d/latex-preamble.tex}
+
+* Declaration
+
+/I declare that this material, which I now submit for assessment, is entirely my own work and has not been taken from the work of others, save and to the extent that such work has been cited and acknowledged within the text of my work. I understand that plagiarism, collusion, and copying are grave and serious offences in the university and accept the penalties that would be imposed should I engage in plagiarism, collusion or copying. This assignment, or any part of it, has not been previously submitted by me or any other person for assessment on this or any other course of study./
+
+* TODO Introduction and goals
+
+The goal of this project is to apply SVM techniques (in particular, the *Pegasos* algorithm) in order to obtain a reasonably good predictor for the task of /hand-written digit recognition/. 
+
+* Dataset and pre-processing
+
+** Dataset
+
+The dataset is available at [[https://www.kaggle.com/datasets/bistaumanga/usps-dataset][kaggle.com]].
+
+The USPS dataset /"is a digit dataset automatically scanned from envelopes by the U.S. Postal Service"/.
+
+The images are all in grayscale, with size 16x16. Each pixel is a value between 0 (black) and 1 (white).
+
+# TODO: aggiungere una caption!
+
+[[file:cifre/out.png]]
+
+** TODO Preprocessing
+
+# Non c'è molto da dire...
+
+The data is stored in a single binary file using the format [[https://www.hdfgroup.org/solutions/hdf5/][HDF5]]; the extraction of data from the file is achieved through the python library [[https://www.h5py.org/][h5py]].
+
+The data is already normalized in the range $[0, 1]$, so no further action is required. 
+
+Some sanity check were implemented (ie. all labels are numbers from 0 to 9).
+
+
+* Training
+
+
